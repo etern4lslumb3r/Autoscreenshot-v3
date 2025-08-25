@@ -1,0 +1,9 @@
+opencv-python
+numpy
+pyautogui
+pillow
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+pywin32; sys_platform == "win32"
