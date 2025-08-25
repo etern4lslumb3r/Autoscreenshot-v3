@@ -242,6 +242,7 @@ class ScreenshotApp:
         self.recent_local_frac_changes = collections.deque(maxlen=RECENT_CHANGES_WINDOW_SIZE) # New: Deque for recent local change fractions
         self.tooltip_window = None # Init tooltip window reference for hover tooltips
 
+
         # --- Google Docs ID ---
         ttk.Label(master, text="Google Doc ID:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.doc_id_entry = ttk.Entry(master, width=50)
@@ -329,6 +330,7 @@ class ScreenshotApp:
 
         # Tooltips removed: no hover bindings
 
+
         # --- Buttons ---
         self.start_button = ttk.Button(master, text="Start Monitoring", command=self.start_monitoring)
         self.start_button.grid(row=4, column=0, sticky="ew", padx=5, pady=5) # Changed row
@@ -400,6 +402,7 @@ class ScreenshotApp:
         except ValueError:
             messagebox.showerror("Error", "Invalid interval. Please enter a number.")
             return
+
 
         bbox_values = []
         for entry in [self.bbox_left, self.bbox_top, self.bbox_width, self.bbox_height]:
@@ -608,6 +611,8 @@ class ScreenshotApp:
         self.min_mean_threshold_slider.set(val)
         self.min_mean_threshold_entry.delete(0, tk.END)
         self.min_mean_threshold_entry.insert(0, f"{val:.4f}")
+
+    
 
     def _show_min_mean_tooltip(self, event):
         """Shows a tooltip when the info button is hovered."""
