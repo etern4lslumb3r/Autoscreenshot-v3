@@ -1,0 +1,3 @@
+# Ignore OAuth credentials and tokens
+credentials.json
+token.json
