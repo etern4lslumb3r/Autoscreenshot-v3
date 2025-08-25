@@ -225,6 +225,7 @@ class ScreenshotApp:
     def __init__(self, master):
         self.master = master
         master.title("Auto Screenshot to Google Docs")
+        master.resizable(False, False) # Prevent window resizing
 
         self.monitoring = False
         self.monitor_thread = None
@@ -239,12 +240,12 @@ class ScreenshotApp:
         self.previous_local_img = None # New: Stores the last screenshot for local comparison
         self.previous_uploaded_img = None # New: Stores the last screenshot uploaded to Drive/Docs
         self.recent_local_frac_changes = collections.deque(maxlen=RECENT_CHANGES_WINDOW_SIZE) # New: Deque for recent local change fractions
+        self.tooltip_window = None # Init tooltip window reference for hover tooltips
 
         # --- Google Docs ID ---
         ttk.Label(master, text="Google Doc ID:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.doc_id_entry = ttk.Entry(master, width=50)
         self.doc_id_entry.grid(row=0, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
-        self.doc_id_entry.insert(0, extract_doc_id_from_url("11CdinqkOFzIbSx18oxN4WHvadFsKnR0IJ0G_x5f7pfc")) # Default value
         self.doc_id_entry.bind("<Control-v>", self._on_paste_doc_id)
 
         # --- Bounding Box Inputs ---
@@ -268,7 +269,11 @@ class ScreenshotApp:
         self.bbox_height.grid(row=1, column=3, padx=5, pady=2)
         
         self.select_region_button = ttk.Button(bbox_frame, text="Select Region on Screen", command=self.select_region_on_screen)
-        self.select_region_button.grid(row=2, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.select_region_button.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+
+        # New: Clear button to blank all BBox inputs
+        self.clear_bbox_button = ttk.Button(bbox_frame, text="Clear Region Fields", command=self.clear_bbox_inputs)
+        self.clear_bbox_button.grid(row=2, column=2, columnspan=2, sticky="ew", padx=5, pady=5)
 
         # --- Interval Input ---
         ttk.Label(master, text="Check Interval (seconds):").grid(row=2, column=0, sticky="w", padx=5, pady=5) # Changed row
@@ -290,14 +295,17 @@ class ScreenshotApp:
         self.mean_deviation_threshold_slider = ttk.Scale(advanced_frame, from_=0.0, to=2.0, orient="horizontal", variable=self.mean_deviation_threshold_var, command=self._update_mean_deviation_label)
         self.mean_deviation_threshold_slider.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
 
-        self.mean_deviation_threshold_label = ttk.Label(advanced_frame, text=f"{self.mean_deviation_threshold_var.get():.2f}")
-        self.mean_deviation_threshold_label.grid(row=1, column=2, sticky="w", padx=0, pady=2)
+        # Replace static label with an editable entry synced with the slider
+        self.mean_deviation_threshold_entry = ttk.Entry(advanced_frame, width=6)
+        self.mean_deviation_threshold_entry.insert(0, f"{self.mean_deviation_threshold_var.get():.2f}")
+        self.mean_deviation_threshold_entry.grid(row=1, column=2, sticky="w", padx=0, pady=2)
+        self.mean_deviation_threshold_entry.bind("<Return>", self._on_mean_deviation_entry_change)
+        self.mean_deviation_threshold_entry.bind("<FocusOut>", self._on_mean_deviation_entry_change)
 
         self.mean_deviation_threshold_text_label = ttk.Label(advanced_frame, text="(e.g., 0.5 for 50% above mean)", font=("TkDefaultFont", 8))
         self.mean_deviation_threshold_text_label.grid(row=1, column=3, columnspan=2, sticky="w", padx=5, pady=0)
 
-        self.mean_deviation_threshold_text_label.bind("<Enter>", self._show_mean_deviation_tooltip)
-        self.mean_deviation_threshold_text_label.bind("<Leave>", self._hide_mean_deviation_tooltip)
+        # Tooltips removed: no hover bindings
 
         ttk.Label(advanced_frame, text="Current Mean Fraction:").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         self.current_mean_change_var = tk.StringVar(value="N/A")
@@ -309,14 +317,17 @@ class ScreenshotApp:
         self.min_mean_threshold_slider = ttk.Scale(advanced_frame, from_=0.0, to=0.1, orient="horizontal", variable=self.min_mean_threshold_var, command=self._update_min_mean_label)
         self.min_mean_threshold_slider.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
 
-        self.min_mean_threshold_label = ttk.Label(advanced_frame, text=f"{self.min_mean_threshold_var.get():.4f}")
-        self.min_mean_threshold_label.grid(row=3, column=2, sticky="w", padx=0, pady=2)
+        # Replace static label with an editable entry synced with the slider
+        self.min_mean_threshold_entry = ttk.Entry(advanced_frame, width=8)
+        self.min_mean_threshold_entry.insert(0, f"{self.min_mean_threshold_var.get():.4f}")
+        self.min_mean_threshold_entry.grid(row=3, column=2, sticky="w", padx=0, pady=2)
+        self.min_mean_threshold_entry.bind("<Return>", self._on_min_mean_entry_change)
+        self.min_mean_threshold_entry.bind("<FocusOut>", self._on_min_mean_entry_change)
 
         self.min_mean_threshold_text_label = ttk.Label(advanced_frame, text="(e.g., 0.005 to prevent very low mean)", font=("TkDefaultFont", 8))
         self.min_mean_threshold_text_label.grid(row=3, column=3, columnspan=2, sticky="w", padx=5, pady=0)
 
-        self.min_mean_threshold_text_label.bind("<Enter>", self._show_min_mean_tooltip)
-        self.min_mean_threshold_text_label.bind("<Leave>", self._hide_min_mean_tooltip)
+        # Tooltips removed: no hover bindings
 
         # --- Buttons ---
         self.start_button = ttk.Button(master, text="Start Monitoring", command=self.start_monitoring)
@@ -435,6 +446,7 @@ class ScreenshotApp:
         for entry in [self.bbox_left, self.bbox_top, self.bbox_width, self.bbox_height]:
             entry.config(state=tk.DISABLED)
         self.select_region_button.config(state=tk.DISABLED) # Disable select region button too
+        self.clear_bbox_button.config(state=tk.DISABLED)
         self.current_mean_change_var.set("N/A") # Reset mean display on start
         self.recent_local_frac_changes.clear() # Clear recent changes history
 
@@ -463,6 +475,11 @@ class ScreenshotApp:
         self.interval_entry.config(state=tk.NORMAL)
         for entry in [self.bbox_left, self.bbox_top, self.bbox_width, self.bbox_height]:
             entry.config(state=tk.NORMAL)
+        # Re-enable region controls
+        if hasattr(self, 'select_region_button') and self.select_region_button:
+            self.select_region_button.config(state=tk.NORMAL)
+        if hasattr(self, 'clear_bbox_button') and self.clear_bbox_button:
+            self.clear_bbox_button.config(state=tk.NORMAL)
         self.current_mean_change_var.set("N/A") # Reset mean display on stop
 
         # Schedule a check for thread termination
@@ -506,8 +523,6 @@ class ScreenshotApp:
             extracted_id = extract_doc_id_from_url(pasted_text)
             self.doc_id_entry.delete(0, tk.END)
             self.doc_id_entry.insert(0, extracted_id)
-            if extracted_id != pasted_text: # Only show info if extraction actually happened
-                messagebox.showinfo("Info", "Google Doc ID extracted and updated from clipboard.")
         except tk.TclError: # Clipboard might be empty or not contain text
             messagebox.showwarning("Warning", "Could not paste from clipboard or clipboard is empty.")
         # Prevent default paste behavior
@@ -515,7 +530,12 @@ class ScreenshotApp:
 
     def _update_mean_deviation_label(self, value):
         """Updates the mean deviation label when the slider is moved."""
-        self.mean_deviation_threshold_label.config(text=f"{float(value):.2f}")
+        # Reflect slider changes into the editable entry
+        try:
+            self.mean_deviation_threshold_entry.delete(0, tk.END)
+            self.mean_deviation_threshold_entry.insert(0, f"{float(value):.2f}")
+        except Exception:
+            pass
 
     def _show_mean_deviation_tooltip(self, event):
         """Shows a tooltip when the info button is hovered."""
@@ -547,7 +567,47 @@ class ScreenshotApp:
 
     def _update_min_mean_label(self, value):
         """Updates the minimum mean label when the slider is moved."""
-        self.min_mean_threshold_label.config(text=f"{float(value):.4f}")
+        # Reflect slider changes into the editable entry
+        try:
+            self.min_mean_threshold_entry.delete(0, tk.END)
+            self.min_mean_threshold_entry.insert(0, f"{float(value):.4f}")
+        except Exception:
+            pass
+
+    def _on_mean_deviation_entry_change(self, event=None):
+        """Parses user input for mean deviation threshold and updates slider/variable."""
+        raw = self.mean_deviation_threshold_entry.get().strip()
+        try:
+            val = float(raw)
+        except ValueError:
+            # Revert to current var if invalid
+            self.mean_deviation_threshold_entry.delete(0, tk.END)
+            self.mean_deviation_threshold_entry.insert(0, f"{self.mean_deviation_threshold_var.get():.2f}")
+            return
+        # Clamp to slider range 0.0 - 2.0
+        val = max(0.0, min(2.0, val))
+        # Update variable and slider
+        self.mean_deviation_threshold_var.set(val)
+        self.mean_deviation_threshold_slider.set(val)
+        # Normalize display
+        self.mean_deviation_threshold_entry.delete(0, tk.END)
+        self.mean_deviation_threshold_entry.insert(0, f"{val:.2f}")
+
+    def _on_min_mean_entry_change(self, event=None):
+        """Parses user input for min mean threshold and updates slider/variable."""
+        raw = self.min_mean_threshold_entry.get().strip()
+        try:
+            val = float(raw)
+        except ValueError:
+            self.min_mean_threshold_entry.delete(0, tk.END)
+            self.min_mean_threshold_entry.insert(0, f"{self.min_mean_threshold_var.get():.4f}")
+            return
+        # Clamp to slider range 0.0 - 0.1
+        val = max(0.0, min(0.1, val))
+        self.min_mean_threshold_var.set(val)
+        self.min_mean_threshold_slider.set(val)
+        self.min_mean_threshold_entry.delete(0, tk.END)
+        self.min_mean_threshold_entry.insert(0, f"{val:.4f}")
 
     def _show_min_mean_tooltip(self, event):
         """Shows a tooltip when the info button is hovered."""
@@ -858,6 +918,11 @@ class ScreenshotApp:
         if self.region_selector:
             self.region_selector.destroy()
         self.master.deiconify() # Restore the main window
+
+    def clear_bbox_inputs(self):
+        """Clears all BBox input fields."""
+        for entry in [self.bbox_left, self.bbox_top, self.bbox_width, self.bbox_height]:
+            entry.delete(0, tk.END)
 
 if __name__ == "__main__":
     root = tk.Tk()
